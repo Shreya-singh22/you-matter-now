@@ -21,7 +21,12 @@ cd <YOUR_PROJECT_NAME>
 # Step 3: Install the necessary dependencies.
 npm i
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+# Step 4: Set up environment variables (optional, for chatbot functionality)
+# Copy .env.example to .env and add your Google Gemini API key
+cp .env.example .env
+# Edit .env and add your VITE_GOOGLE_API key from https://makersuite.google.com/app/apikey
+
+# Step 5: Start the development server with auto-reloading and an instant preview.
 npm run dev
 ```
 
