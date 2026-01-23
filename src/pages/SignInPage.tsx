@@ -31,7 +31,7 @@ const SignInPage = () => {
     try {
       setIsLoading(true);
       // In a real application, this would be an API call to authenticate
-      console.log("Signing in with:", values);
+      // TODO: Implement actual authentication API call here
       
       // Simulate API call
       await new Promise(resolve => setTimeout(resolve, 1000));

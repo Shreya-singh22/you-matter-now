@@ -57,7 +57,7 @@ const SignUpPage = () => {
 
   function onSubmit(values: z.infer<typeof formSchema>) {
     // In a real app, this would connect to your authentication service
-    console.log(values);
+    // TODO: Implement actual sign-up API call here
     
     // Show success message
     toast({
