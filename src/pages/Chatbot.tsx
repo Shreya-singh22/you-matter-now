@@ -15,6 +15,7 @@ const Chatbot = () => {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [apiError, setApiError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   
@@ -30,12 +31,22 @@ const Chatbot = () => {
 
   // Initial greeting when component mounts
   useEffect(() => {
-    const greeting: Message = {
-      role: "assistant",
-      text: "Hello! I'm your mental health companion. How are you feeling today?",
-      timestamp: new Date()
-    };
-    setMessages([greeting]);
+    if (!GEMINI_API_KEY) {
+      const errorGreeting: Message = {
+        role: "assistant",
+        text: "⚠️ API Key Missing: Please set VITE_GOOGLE_API in your environment variables to use the chatbot. For now, I'll provide basic responses without AI capabilities.",
+        timestamp: new Date()
+      };
+      setMessages([errorGreeting]);
+      setApiError("API key not configured");
+    } else {
+      const greeting: Message = {
+        role: "assistant",
+        text: "Hello! I'm your mental health companion. How are you feeling today?",
+        timestamp: new Date()
+      };
+      setMessages([greeting]);
+    }
   }, []);
 
   const handleSend = async () => {
@@ -50,6 +61,30 @@ const Chatbot = () => {
     setMessages(prev => [...prev, userMessage]);
     setInput("");
     setLoading(true);
+
+    // If API key is missing, provide a basic fallback response
+    if (!GEMINI_API_KEY) {
+      const fallbackResponses = [
+        "I understand you're reaching out. While I don't have full AI capabilities right now, I want you to know that your feelings are valid. Consider speaking with a mental health professional for personalized support.",
+        "Thank you for sharing. It's important to express your feelings. For immediate support, you can contact crisis helplines or speak with a licensed therapist who can provide professional guidance.",
+        "I hear you. Remember that seeking help is a sign of strength. Consider reaching out to trusted friends, family, or mental health professionals who can provide the support you need."
+      ];
+      
+      const randomResponse = fallbackResponses[Math.floor(Math.random() * fallbackResponses.length)];
+      
+      const botMessage: Message = { 
+        role: "assistant", 
+        text: randomResponse,
+        timestamp: new Date()
+      };
+      
+      setMessages(prev => [...prev, botMessage]);
+      setLoading(false);
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 50);
+      return;
+    }
 
     try {
       // Construct the message with the mental health context
@@ -103,12 +138,26 @@ User message: ${input}`;
       };
       
       setMessages(prev => [...prev, botMessage]);
-    } catch (error) {
+      setApiError(null);
+    } catch (error: any) {
       console.error("API Error:", error);
+      
+      let errorText = "I'm sorry, I'm having trouble connecting right now. Please try again in a moment.";
+      
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        errorText = "⚠️ API authentication failed. Please check that your VITE_GOOGLE_API key is valid and has the necessary permissions.";
+        setApiError("Authentication failed");
+      } else if (error.response?.status === 429) {
+        errorText = "⚠️ Rate limit exceeded. Please wait a moment before trying again.";
+      } else if (error.response?.status >= 500) {
+        errorText = "⚠️ The API service is temporarily unavailable. Please try again later.";
+      } else if (error.message === "Network Error") {
+        errorText = "⚠️ Network error. Please check your internet connection and try again.";
+      }
       
       const errorMessage: Message = { 
         role: "assistant", 
-        text: "I'm sorry, I'm having trouble connecting right now. Please try again in a moment.",
+        text: errorText,
         timestamp: new Date()
       };
       
@@ -150,6 +199,41 @@ User message: ${input}`;
           </h1>
         </div>
       </div>
+
+      {/* API Key Warning Banner */}
+      {!GEMINI_API_KEY && (
+        <div className="w-full px-4 mb-4">
+          <div className="container mx-auto bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+            <div className="flex items-start">
+              <div className="flex-shrink-0">
+                <span className="text-2xl">⚠️</span>
+              </div>
+              <div className="ml-3 flex-1">
+                <h3 className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
+                  API Key Not Configured
+                </h3>
+                <div className="mt-2 text-sm text-yellow-700 dark:text-yellow-300">
+                  <p>
+                    To enable full AI chatbot functionality, please set the <code className="bg-yellow-100 dark:bg-yellow-900/40 px-1 rounded">VITE_GOOGLE_API</code> environment variable.
+                  </p>
+                  <p className="mt-1">
+                    Get your API key from{" "}
+                    <a 
+                      href="https://makersuite.google.com/app/apikey" 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="underline font-medium"
+                    >
+                      Google AI Studio
+                    </a>
+                    {" "}and add it to your <code className="bg-yellow-100 dark:bg-yellow-900/40 px-1 rounded">.env</code> file.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="container mx-auto flex flex-col items-center p-4 pt-2">
         <div className="w-full max-w-4xl flex flex-col h-[calc(100vh-7rem)]">
