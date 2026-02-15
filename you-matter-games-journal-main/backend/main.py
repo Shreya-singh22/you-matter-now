@@ -9,12 +9,7 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI()
 
 # Configure CORS
-origins = [
-    "http://localhost:5173",  # Vite default port
-    "http://localhost:3000",  # React default port
-    "http://localhost:8080",  # Vite port if 5173 is taken
-    "http://localhost:8081",  # Another Vite port
-]
+origins = ["*"] # Allow all for now to unblock Vercel deployment
 
 app.add_middleware(
     CORSMiddleware,
