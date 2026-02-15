@@ -1,55 +1,73 @@
+# 🌱 You Matter Now
 
+**You Matter Now** is an AI-powered mental health platform designed to provide accessible, compassionate, and continuous support for individuals through technology.
 
+The platform focuses on **self-reflection, emotional well-being, and guided mental health assistance**, helping users feel heard, supported, and empowered.
 
+---
 
+## ✨ Features
 
-**Use your preferred IDE**
+- 🤖 **AI Chatbot (24/7 Support)**  
+  Provides empathetic conversations and mental health guidance anytime using Groq's Llama 3 models.
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+- 📓 **Journaling System**  
+  Users can write and reflect on their thoughts and emotions securely. Includes mood tracking and gratitude prompts.
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+- 🧠 **Self-Assessments**  
+  Includes basic anxiety and depression screening tools for self-awareness.
 
-Follow these steps:
+- 👩‍⚕️ **Doctor / Therapist Discovery**  
+  Helps users find relevant mental health professionals.
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+- 🎮 **Wellness-Oriented Experience**  
+  Designed to reduce stress and encourage healthy emotional habits through games and mindfulness activities.
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+---
 
-# Step 3: Install the necessary dependencies.
-npm i
+## 🛠️ Tech Stack
 
-# Step 4: Set up environment variables (optional, for chatbot functionality)
-# Copy .env.example to .env and add your Google Gemini API key
-cp .env.example .env
-# Edit .env and add your VITE_GOOGLE_API key from https://makersuite.google.com/app/apikey
+- **Frontend:** TypeScript, React, Vite, Tailwind CSS, shadcn/ui
+- **Backend:** Python, FastAPI, SQLite
+- **AI Integration:** LangChain, Groq API (Llama 3.3)
 
-# Step 5: Start the development server with auto-reloading and an instant preview.
+---
+
+## 🚀 Getting Started Locally
+
+### Prerequisites
+
+- Node.js and npm
+- Python 3.10+
+- Groq API Key
+
+### 1. Backend Setup
+
+```bash
+cd backend
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+pip install -r requirements.txt
+
+# Create .env file with your credentials
+# GROQ_API_KEY=your_key_here
+
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
+
+### 2. Frontend Setup
+
+```bash
+# In the root directory (you-matter-games-journal-main)
+npm install
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+Visit `http://localhost:8080` (or `http://localhost:5173`) to view the application.
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+---
 
-**Use GitHub Codespaces**
+## 🌐 Live Deployment
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
-
-## What technologies are used for this project?
-
-This project is built with:
-
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+🚀 Live Website:
+👉 https://you-matter-games-journal-main.vercel.app
