@@ -2,13 +2,14 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Link, useNavigate } from "react-router-dom";
-import { toast } from "@/components/ui/use-toast";
+import { toast } from "@/hooks/use-toast";
 import { Mail, Lock, ArrowRight } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
 
 const formSchema = z.object({
   email: z.string().email({ message: "Please enter a valid email address" }),
@@ -17,32 +18,33 @@ const formSchema = z.object({
 
 const SignInPage = () => {
   const navigate = useNavigate();
+  const { login } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
-    defaultValues: {
-      email: "",
-      password: "",
-    },
+    defaultValues: { email: "", password: "" },
   });
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     try {
       setIsLoading(true);
-      // In a real application, this would be an API call to authenticate
-      // TODO: Implement actual authentication API call here
-      
       // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
+      await new Promise(resolve => setTimeout(resolve, 800));
+
+      // Derive a display name from email (until real auth is wired)
+      const name = values.email.split("@")[0].replace(/[._]/g, " ")
+        .replace(/\b\w/g, c => c.toUpperCase());
+
+      login({ name, email: values.email });
+
       toast({
         title: "Welcome back!",
         description: "You have successfully signed in.",
       });
-      
-      navigate("/");
-    } catch (error) {
+
+      navigate("/profile");
+    } catch {
       toast({
         title: "Error",
         description: "Failed to sign in. Please check your credentials and try again.",
@@ -74,9 +76,9 @@ const SignInPage = () => {
                     <FormControl>
                       <div className="relative">
                         <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                        <Input 
-                          placeholder="Enter your email" 
-                          className="pl-10" 
+                        <Input
+                          placeholder="Enter your email"
+                          className="pl-10"
                           type="email"
                           {...field}
                         />
@@ -95,9 +97,9 @@ const SignInPage = () => {
                     <FormControl>
                       <div className="relative">
                         <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                        <Input 
-                          placeholder="Enter your password" 
-                          type="password" 
+                        <Input
+                          placeholder="Enter your password"
+                          type="password"
                           className="pl-10"
                           {...field}
                         />
@@ -107,11 +109,7 @@ const SignInPage = () => {
                   </FormItem>
                 )}
               />
-              <Button 
-                type="submit" 
-                className="w-full"
-                disabled={isLoading}
-              >
+              <Button type="submit" className="w-full" disabled={isLoading}>
                 {isLoading ? "Signing in..." : "Sign in"}
               </Button>
             </form>
@@ -133,4 +131,4 @@ const SignInPage = () => {
   );
 };
 
-export default SignInPage; 
+export default SignInPage;

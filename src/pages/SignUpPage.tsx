@@ -3,7 +3,8 @@ import { useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "@/context/AuthContext";
 import { User, UserPlus, Mail, Lock, Eye, EyeOff } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -43,6 +44,7 @@ const SignUpPage = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const navigate = useNavigate();
+  const { login } = useAuth();
   
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -56,19 +58,15 @@ const SignUpPage = () => {
   });
 
   function onSubmit(values: z.infer<typeof formSchema>) {
-    // In a real app, this would connect to your authentication service
-    // TODO: Implement actual sign-up API call here
-    
-    // Show success message
+    // Log the user in immediately after sign-up
+    login({ name: values.name, email: values.email });
+
     toast({
       title: "Account created!",
-      description: "Your account has been successfully created.",
+      description: "Welcome to YouMatterNow!",
     });
-    
-    // Redirect to home page after successful sign-up
-    setTimeout(() => {
-      navigate("/");
-    }, 1500);
+
+    navigate("/profile");
   }
 
   return (
@@ -214,9 +212,9 @@ const SignUpPage = () => {
         </CardContent>
         <CardFooter className="flex justify-center border-t p-6 text-sm text-muted-foreground">
           Already have an account?{" "}
-          <Button variant="link" className="px-2" onClick={() => navigate("/")}>
+          <Link to="/signin" className="text-brand-primary hover:underline px-1">
             Sign In
-          </Button>
+          </Link>
         </CardFooter>
       </Card>
     </div>
