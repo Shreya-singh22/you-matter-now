@@ -8,7 +8,7 @@ type Message = {
 };
 
 // Environment variable approach is safer
-const GEMINI_API_KEY = import.meta.env.VITE_GOOGLE_API;
+const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
 
 const Chatbot = () => {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -31,10 +31,10 @@ const Chatbot = () => {
 
   // Initial greeting when component mounts
   useEffect(() => {
-    if (!GEMINI_API_KEY) {
+    if (!GROQ_API_KEY) {
       const errorGreeting: Message = {
         role: "assistant",
-        text: "⚠️ API Key Missing: Please set VITE_GOOGLE_API in your environment variables to use the chatbot. For now, I'll provide basic responses without AI capabilities.",
+        text: "⚠️ API Key Missing: Please set VITE_GROQ_API_KEY in your environment variables to use the chatbot. For now, I'll provide basic responses without AI capabilities.",
         timestamp: new Date()
       };
       setMessages([errorGreeting]);
@@ -63,7 +63,7 @@ const Chatbot = () => {
     setLoading(true);
 
     // If API key is missing, provide a basic fallback response
-    if (!GEMINI_API_KEY) {
+    if (!GROQ_API_KEY) {
       const fallbackResponses = [
         "I understand you're reaching out. While I don't have full AI capabilities right now, I want you to know that your feelings are valid. Consider speaking with a mental health professional for personalized support.",
         "Thank you for sharing. It's important to express your feelings. For immediate support, you can contact crisis helplines or speak with a licensed therapist who can provide professional guidance.",
@@ -88,7 +88,13 @@ const Chatbot = () => {
 
     try {
       // Construct the message with the mental health context
-      const promptText = `You are a compassionate mental health support chatbot named MindfulCompanion. 
+      const systemPrompt = `You are a compassionate mental health support chatbot named MindfulCompanion.
+
+Scope:
+- You ONLY discuss mental health, emotional well-being, stress, anxiety, depression, coping strategies, mindfulness, relationships as they affect emotional health, and related self-care topics.
+- If the user asks about anything outside this scope (e.g. coding, homework, general trivia, news, technical help, entertainment), politely decline and gently steer the conversation back to how they're feeling or what's on their mind. Do not answer the off-topic question, even partially.
+- Brief social pleasantries (greetings, thanks, "how are you") are fine to acknowledge briefly before redirecting to emotional well-being.
+
 Guidelines:
 - Respond with empathy and warmth to the user's emotional state
 - Use a supportive, non-judgmental tone
@@ -98,60 +104,54 @@ Guidelines:
 - Focus on validation and practical support strategies
 - Never diagnose medical conditions
 - Prioritize safety if the user expresses harmful thoughts
-- End responses with a gentle question to continue the conversation
+- End responses with a gentle question to continue the conversation`;
 
-User message: ${input}`;
-
-      // The correct format for Gemini API
+      // Groq's OpenAI-compatible chat completions API
       const response = await axios.post(
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
+        "https://api.groq.com/openai/v1/chat/completions",
         {
-          contents: [
-            {
-              parts: [
-                { text: promptText }
-              ]
-            }
+          model: "llama-3.3-70b-versatile",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: input }
           ],
-          generationConfig: {
-            temperature: 0.7,
-            topK: 40,
-            topP: 0.95,
-            maxOutputTokens: 500,
-          }
+          temperature: 0.7,
+          top_p: 0.95,
+          max_tokens: 500,
         },
         {
           headers: {
             "Content-Type": "application/json",
-            "x-goog-api-key": GEMINI_API_KEY,
+            "Authorization": `Bearer ${GROQ_API_KEY}`,
           },
         }
       );
 
-      const botResponse = response.data.candidates?.[0]?.content?.parts?.[0]?.text || 
+      const botResponse = response.data.choices?.[0]?.message?.content ||
         "I'm having trouble responding right now. How else might I help you?";
-      
-      const botMessage: Message = { 
-        role: "assistant", 
+
+      const botMessage: Message = {
+        role: "assistant",
         text: botResponse,
         timestamp: new Date()
       };
-      
+
       setMessages(prev => [...prev, botMessage]);
       setApiError(null);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("API Error:", error);
-      
+
       let errorText = "I'm sorry, I'm having trouble connecting right now. Please try again in a moment.";
-      
-      if (error.response?.status === 401 || error.response?.status === 403) {
-        errorText = "⚠️ API authentication failed. Please check that your VITE_GOOGLE_API key is valid and has the necessary permissions.";
+      const err = error as { response?: { status?: number }; message?: string };
+
+      if (err.response?.status === 401 || err.response?.status === 403) {
+        errorText = "⚠️ API authentication failed. Please check that your VITE_GROQ_API_KEY key is valid and has the necessary permissions.";
         setApiError("Authentication failed");
-      } else if (error.response?.status === 429) {
+      } else if (err.response?.status === 429) {
         errorText = "⚠️ Rate limit exceeded. Please wait a moment before trying again.";
-      } else if (error.response?.status >= 500) {
+      } else if (err.response?.status && err.response.status >= 500) {
         errorText = "⚠️ The API service is temporarily unavailable. Please try again later.";
-      } else if (error.message === "Network Error") {
+      } else if (err.message === "Network Error") {
         errorText = "⚠️ Network error. Please check your internet connection and try again.";
       }
       
@@ -201,7 +201,7 @@ User message: ${input}`;
       </div>
 
       {/* API Key Warning Banner */}
-      {!GEMINI_API_KEY && (
+      {!GROQ_API_KEY && (
         <div className="w-full px-4 mb-4">
           <div className="container mx-auto bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
             <div className="flex items-start">
@@ -214,17 +214,17 @@ User message: ${input}`;
                 </h3>
                 <div className="mt-2 text-sm text-yellow-700 dark:text-yellow-300">
                   <p>
-                    To enable full AI chatbot functionality, please set the <code className="bg-yellow-100 dark:bg-yellow-900/40 px-1 rounded">VITE_GOOGLE_API</code> environment variable.
+                    To enable full AI chatbot functionality, please set the <code className="bg-yellow-100 dark:bg-yellow-900/40 px-1 rounded">VITE_GROQ_API_KEY</code> environment variable.
                   </p>
                   <p className="mt-1">
                     Get your API key from{" "}
-                    <a 
-                      href="https://makersuite.google.com/app/apikey" 
-                      target="_blank" 
+                    <a
+                      href="https://console.groq.com/keys"
+                      target="_blank"
                       rel="noopener noreferrer"
                       className="underline font-medium"
                     >
-                      Google AI Studio
+                      Groq Console
                     </a>
                     {" "}and add it to your <code className="bg-yellow-100 dark:bg-yellow-900/40 px-1 rounded">.env</code> file.
                   </p>
