@@ -18,7 +18,7 @@ const formSchema = z.object({
 
 const SignInPage = () => {
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { signIn } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -29,14 +29,7 @@ const SignInPage = () => {
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     try {
       setIsLoading(true);
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 800));
-
-      // Derive a display name from email (until real auth is wired)
-      const name = values.email.split("@")[0].replace(/[._]/g, " ")
-        .replace(/\b\w/g, c => c.toUpperCase());
-
-      login({ name, email: values.email });
+      await signIn(values.email, values.password);
 
       toast({
         title: "Welcome back!",
@@ -44,10 +37,12 @@ const SignInPage = () => {
       });
 
       navigate("/profile");
-    } catch {
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { detail?: string } } };
       toast({
-        title: "Error",
-        description: "Failed to sign in. Please check your credentials and try again.",
+        title: "Sign in failed",
+        description: err.response?.data?.detail ||
+          "We couldn't sign you in. Check your email and password, then try again.",
         variant: "destructive",
       });
     } finally {

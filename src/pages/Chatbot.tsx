@@ -1,14 +1,11 @@
 import React, { useState, useRef, useEffect } from "react";
-import axios from "axios";
+import api from "@/lib/api";
 
 type Message = {
   role: "user" | "assistant";
   text: string;
   timestamp: Date;
 };
-
-// Environment variable approach is safer
-const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
 
 const Chatbot = () => {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -31,155 +28,59 @@ const Chatbot = () => {
 
   // Initial greeting when component mounts
   useEffect(() => {
-    if (!GROQ_API_KEY) {
-      const errorGreeting: Message = {
-        role: "assistant",
-        text: "⚠️ API Key Missing: Please set VITE_GROQ_API_KEY in your environment variables to use the chatbot. For now, I'll provide basic responses without AI capabilities.",
-        timestamp: new Date()
-      };
-      setMessages([errorGreeting]);
-      setApiError("API key not configured");
-    } else {
-      const greeting: Message = {
-        role: "assistant",
-        text: "Hello! I'm your mental health companion. How are you feeling today?",
-        timestamp: new Date()
-      };
-      setMessages([greeting]);
-    }
+    setMessages([{
+      role: "assistant",
+      text: "Hello! I'm your mental health companion. How are you feeling today?",
+      timestamp: new Date()
+    }]);
   }, []);
 
   const handleSend = async () => {
     if (!input.trim()) return;
 
-    const userMessage: Message = { 
-      role: "user", 
+    const userMessage: Message = {
+      role: "user",
       text: input,
       timestamp: new Date()
     };
-    
+
     setMessages(prev => [...prev, userMessage]);
     setInput("");
     setLoading(true);
 
-    // If API key is missing, provide a basic fallback response
-    if (!GROQ_API_KEY) {
-      const fallbackResponses = [
-        "I understand you're reaching out. While I don't have full AI capabilities right now, I want you to know that your feelings are valid. Consider speaking with a mental health professional for personalized support.",
-        "Thank you for sharing. It's important to express your feelings. For immediate support, you can contact crisis helplines or speak with a licensed therapist who can provide professional guidance.",
-        "I hear you. Remember that seeking help is a sign of strength. Consider reaching out to trusted friends, family, or mental health professionals who can provide the support you need."
-      ];
-      
-      const randomResponse = fallbackResponses[Math.floor(Math.random() * fallbackResponses.length)];
-      
-      const botMessage: Message = { 
-        role: "assistant", 
-        text: randomResponse,
-        timestamp: new Date()
-      };
-      
-      setMessages(prev => [...prev, botMessage]);
-      setLoading(false);
-      setTimeout(() => {
-        inputRef.current?.focus();
-      }, 50);
-      return;
-    }
-
     try {
-      // Construct the message with the mental health context
-      const systemPrompt = `You are a compassionate mental health support chatbot named MindfulCompanion.
+      // The backend owns the Groq key and the RAG pipeline; the browser
+      // never sees a credential.
+      const { data } = await api.post("/chat/", { message: userMessage.text });
 
-Scope:
-- You ONLY discuss mental health, emotional well-being, stress, anxiety, depression, coping strategies, mindfulness, relationships as they affect emotional health, and related self-care topics.
-- If the user asks about anything outside this scope (e.g. coding, homework, general trivia, news, technical help, entertainment), politely decline and gently steer the conversation back to how they're feeling or what's on their mind. Do not answer the off-topic question, even partially.
-- Brief social pleasantries (greetings, thanks, "how are you") are fine to acknowledge briefly before redirecting to emotional well-being.
-
-Guidelines:
-- Respond with empathy and warmth to the user's emotional state
-- Use a supportive, non-judgmental tone
-- Offer gentle suggestions for well-being when appropriate
-- For severe concerns, recommend professional help
-- Keep responses concise (2-3 paragraphs maximum)
-- Focus on validation and practical support strategies
-- Never diagnose medical conditions
-- Prioritize safety if the user expresses harmful thoughts
-- End responses with a gentle question to continue the conversation`;
-
-      // Groq's OpenAI-compatible chat completions API
-      const response = await axios.post(
-        "https://api.groq.com/openai/v1/chat/completions",
-        {
-          model: "openai/gpt-oss-120b",
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: input }
-          ],
-          temperature: 0.7,
-          top_p: 0.95,
-          max_tokens: 500,
-        },
-        {
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${GROQ_API_KEY}`,
-          },
-        }
-      );
-
-      const botResponse = response.data.choices?.[0]?.message?.content ||
-        "I'm having trouble responding right now. How else might I help you?";
-
-      const botMessage: Message = {
+      setMessages(prev => [...prev, {
         role: "assistant",
-        text: botResponse,
+        text: data.response || "I'm having trouble responding right now. How else might I help you?",
         timestamp: new Date()
-      };
-
-      setMessages(prev => [...prev, botMessage]);
+      }]);
       setApiError(null);
     } catch (error: unknown) {
-      console.error("API Error:", error);
-
+      const err = error as { response?: { status?: number }; message?: string };
       let errorText = "I'm sorry, I'm having trouble connecting right now. Please try again in a moment.";
-      const err = error as {
-        response?: { status?: number; data?: { error?: { message?: string } } };
-        message?: string;
-      };
 
-      if (err.response?.status === 400) {
-        // Surface the provider's own reason - most often a decommissioned model.
-        const reason = err.response.data?.error?.message;
-        errorText = reason
-          ? `⚠️ The AI service rejected the request: ${reason}`
-          : "⚠️ The AI service rejected the request. The configured model may no longer be available.";
-        setApiError("Bad request");
-      } else if (err.response?.status === 401 || err.response?.status === 403) {
-        errorText = "⚠️ API authentication failed. Please check that your VITE_GROQ_API_KEY key is valid and has the necessary permissions.";
-        setApiError("Authentication failed");
-      } else if (err.response?.status === 429) {
-        errorText = "⚠️ Rate limit exceeded. Please wait a moment before trying again.";
+      if (err.response?.status === 429) {
+        errorText = "\u26a0\ufe0f The service is busy right now. Please wait a moment before trying again.";
       } else if (err.response?.status && err.response.status >= 500) {
-        errorText = "⚠️ The API service is temporarily unavailable. Please try again later.";
+        errorText = "\u26a0\ufe0f The chat service is temporarily unavailable. Please try again shortly.";
       } else if (err.message === "Network Error") {
-        errorText = "⚠️ Network error. Please check your internet connection and try again.";
+        errorText = "\u26a0\ufe0f Can't reach the server. If you're running locally, make sure the backend is started on port 8000.";
+        setApiError("Backend unreachable");
       }
-      
-      const errorMessage: Message = { 
-        role: "assistant", 
+
+      setMessages(prev => [...prev, {
+        role: "assistant",
         text: errorText,
         timestamp: new Date()
-      };
-      
-      setMessages(prev => [...prev, errorMessage]);
+      }]);
     }
 
     setLoading(false);
-    
-    // Focus back on input after sending
-    setTimeout(() => {
-      inputRef.current?.focus();
-    }, 50);
+    setTimeout(() => inputRef.current?.focus(), 50);
   };
 
   const formatTime = (date: Date): string => {
@@ -209,41 +110,6 @@ Guidelines:
           </h1>
         </div>
       </div>
-
-      {/* API Key Warning Banner */}
-      {!GROQ_API_KEY && (
-        <div className="w-full px-4 mb-4">
-          <div className="container mx-auto bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
-            <div className="flex items-start">
-              <div className="flex-shrink-0">
-                <span className="text-2xl">⚠️</span>
-              </div>
-              <div className="ml-3 flex-1">
-                <h3 className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
-                  API Key Not Configured
-                </h3>
-                <div className="mt-2 text-sm text-yellow-700 dark:text-yellow-300">
-                  <p>
-                    To enable full AI chatbot functionality, please set the <code className="bg-yellow-100 dark:bg-yellow-900/40 px-1 rounded">VITE_GROQ_API_KEY</code> environment variable.
-                  </p>
-                  <p className="mt-1">
-                    Get your API key from{" "}
-                    <a
-                      href="https://console.groq.com/keys"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="underline font-medium"
-                    >
-                      Groq Console
-                    </a>
-                    {" "}and add it to your <code className="bg-yellow-100 dark:bg-yellow-900/40 px-1 rounded">.env</code> file.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       <div className="container mx-auto flex flex-col items-center p-4 pt-2">
         <div className="w-full max-w-4xl flex flex-col h-[calc(100vh-7rem)]">

@@ -1,5 +1,6 @@
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
+import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -13,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "@/components/ui/use-toast";
 
 type JournalEntry = {
-  id: string;
+  id: number;
   date: Date;
   title: string;
   content: string;
@@ -21,32 +22,14 @@ type JournalEntry = {
   gratitude: string[];
 };
 
-// Demo journal entries
-const demoEntries: JournalEntry[] = [
-  {
-    id: "1",
-    date: new Date(2025, 3, 15),
-    title: "Finding Balance",
-    content: "Today was challenging but I managed to take breaks when needed. I felt overwhelmed in the morning but practiced deep breathing which helped a lot.",
-    mood: "Neutral",
-    gratitude: ["My morning coffee", "A supportive text from a friend", "Finding time to read"]
-  },
-  {
-    id: "2",
-    date: new Date(2025, 3, 14),
-    title: "Small Victories",
-    content: "I completed the presentation I was dreading. It wasn't perfect but I'm proud I pushed through. Need to remember this feeling next time I procrastinate.",
-    mood: "Happy",
-    gratitude: ["Finishing my project", "Sunny weather", "A good night's sleep"]
-  }
-];
-
 const moodOptions = [
   "Happy", "Content", "Neutral", "Anxious", "Sad", "Excited", "Tired", "Frustrated"
 ];
 
 const JournalPage = () => {
-  const [entries, setEntries] = useState<JournalEntry[]>(demoEntries);
+  const [entries, setEntries] = useState<JournalEntry[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [newEntryTitle, setNewEntryTitle] = useState("");
   const [newEntryContent, setNewEntryContent] = useState("");
@@ -56,6 +39,25 @@ const JournalPage = () => {
   const [selectedEntry, setSelectedEntry] = useState<JournalEntry | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
   
+  const fetchEntries = useCallback(async () => {
+    try {
+      const { data } = await api.get("/journal/");
+      setEntries(
+        data.map((e: JournalEntry & { date: string }) => ({ ...e, date: new Date(e.date) }))
+      );
+    } catch {
+      toast({
+        title: "Couldn't load your journal",
+        description: "We couldn't reach the server. Check that the backend is running.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchEntries(); }, [fetchEntries]);
+
   const resetForm = () => {
     setNewEntryTitle("");
     setNewEntryContent("");
@@ -66,7 +68,7 @@ const JournalPage = () => {
     setSelectedEntry(null);
   };
   
-  const handleSaveEntry = () => {
+  const handleSaveEntry = async () => {
     if (!newEntryTitle.trim() || !newEntryContent.trim()) {
       toast({
         title: "Please complete your entry",
@@ -75,54 +77,54 @@ const JournalPage = () => {
       });
       return;
     }
-    
-    if (isEditMode && selectedEntry) {
-      // Edit existing entry
-      const updatedEntries = entries.map(entry => 
-        entry.id === selectedEntry.id 
-          ? {
-              ...entry,
-              title: newEntryTitle,
-              content: newEntryContent,
-              mood: selectedMood,
-              gratitude: [...gratitudeItems]
-            }
-          : entry
-      );
-      setEntries(updatedEntries);
+
+    const payload = {
+      title: newEntryTitle,
+      content: newEntryContent,
+      mood: selectedMood,
+      gratitude: gratitudeItems,
+    };
+
+    try {
+      setIsSaving(true);
+      if (isEditMode && selectedEntry) {
+        await api.put(`/journal/${selectedEntry.id}`, payload);
+        toast({ title: "Entry updated", description: "Your journal entry has been saved." });
+      } else {
+        await api.post("/journal/", payload);
+        toast({ title: "Entry saved", description: "Your journal entry has been saved." });
+      }
+      await fetchEntries();
+      resetForm();
+    } catch (error: unknown) {
+      const err = error as { response?: { status?: number } };
       toast({
-        title: "Entry updated",
-        description: "Your journal entry has been updated successfully.",
+        title: "Couldn't save your entry",
+        description: err.response?.status === 401
+          ? "Your session expired. Please sign in again."
+          : "Something went wrong saving that. Please try again.",
+        variant: "destructive",
       });
-    } else {
-      // Create new entry
-      const newEntry: JournalEntry = {
-        id: Date.now().toString(),
-        date: selectedDate,
-        title: newEntryTitle,
-        content: newEntryContent,
-        mood: selectedMood,
-        gratitude: [...gratitudeItems]
-      };
-      setEntries([newEntry, ...entries]);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteEntry = async (id: number) => {
+    try {
+      await api.delete(`/journal/${id}`);
+      setEntries((prev) => prev.filter((entry) => entry.id !== id));
+      resetForm();
+      toast({ title: "Entry deleted", description: "Your journal entry has been deleted." });
+    } catch {
       toast({
-        title: "Entry saved",
-        description: "Your journal entry has been saved successfully.",
+        title: "Couldn't delete that entry",
+        description: "Something went wrong. Please try again.",
+        variant: "destructive",
       });
     }
-    
-    resetForm();
   };
-  
-  const handleDeleteEntry = (id: string) => {
-    setEntries(entries.filter(entry => entry.id !== id));
-    resetForm();
-    toast({
-      title: "Entry deleted",
-      description: "Your journal entry has been deleted.",
-    });
-  };
-  
+
   const handleEditEntry = (entry: JournalEntry) => {
     setSelectedEntry(entry);
     setNewEntryTitle(entry.title);
@@ -280,12 +282,13 @@ const JournalPage = () => {
                   </div>
                 </CardContent>
                 <CardFooter className="flex gap-2">
-                  <Button 
+                  <Button
                     onClick={handleSaveEntry}
                     className="flex-1"
+                    disabled={isSaving}
                   >
                     <Save className="mr-2 h-4 w-4" />
-                    {isEditMode ? "Update Entry" : "Save Entry"}
+                    {isSaving ? "Saving..." : isEditMode ? "Update Entry" : "Save Entry"}
                   </Button>
                   {isEditMode && (
                     <Button 
@@ -300,7 +303,12 @@ const JournalPage = () => {
             </TabsContent>
             
             <TabsContent value="entries">
-              {entries.length > 0 ? (
+              {isLoading ? (
+                <div className="text-center p-8 border rounded-lg">
+                  <div className="mx-auto h-8 w-8 animate-spin rounded-full border-b-2 border-brand-primary" />
+                  <p className="text-muted-foreground mt-3">Loading your entries...</p>
+                </div>
+              ) : entries.length > 0 ? (
                 <div className="space-y-4">
                   {entries.map((entry) => (
                     <Card key={entry.id}>

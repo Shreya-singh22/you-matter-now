@@ -27,3 +27,13 @@ dist-ssr
 # Archive / tooling cruft
 __MACOSX/
 .npm-cache/
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+
+# Local data / generated artifacts
+*.db
+chroma_db/

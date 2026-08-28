@@ -44,7 +44,8 @@ const SignUpPage = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { signUp } = useAuth();
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -57,16 +58,28 @@ const SignUpPage = () => {
     },
   });
 
-  function onSubmit(values: z.infer<typeof formSchema>) {
-    // Log the user in immediately after sign-up
-    login({ name: values.name, email: values.email });
+  async function onSubmit(values: z.infer<typeof formSchema>) {
+    try {
+      setIsSubmitting(true);
+      await signUp(values.name, values.email, values.password);
 
-    toast({
-      title: "Account created!",
-      description: "Welcome to YouMatterNow!",
-    });
+      toast({
+        title: "Account created!",
+        description: "Welcome to YouMatterNow!",
+      });
 
-    navigate("/profile");
+      navigate("/profile");
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { detail?: string } } };
+      toast({
+        title: "Sign up failed",
+        description: err.response?.data?.detail ||
+          "We couldn't create your account. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -204,8 +217,14 @@ const SignUpPage = () => {
                 )}
               />
               
-              <Button type="submit" className="w-full bg-brand-primary hover:bg-brand-primary/90" size="lg">
-                <UserPlus className="mr-2 h-4 w-4" /> Sign Up
+              <Button
+                type="submit"
+                className="w-full bg-brand-primary hover:bg-brand-primary/90"
+                size="lg"
+                disabled={isSubmitting}
+              >
+                <UserPlus className="mr-2 h-4 w-4" />
+                {isSubmitting ? "Creating account..." : "Sign Up"}
               </Button>
             </form>
           </Form>

@@ -1,7 +1,9 @@
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
+import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -13,8 +15,10 @@ import {
   MessageCircle,
   UserSearch,
   Smile,
+  TrendingUp,
+  CalendarDays,
 } from "lucide-react";
-import { useEffect } from "react";
+import { format } from "date-fns";
 import { toast } from "@/hooks/use-toast";
 
 const features = [
@@ -24,26 +28,27 @@ const features = [
   { icon: UserSearch, label: "Find Therapist", desc: "Connect with professionals", href: "/find-therapist" },
 ];
 
-const ProfilePage = () => {
-  const { user, isAuthenticated, logout } = useAuth();
-  const navigate = useNavigate();
+interface Entry {
+  id: number;
+  mood: string;
+  date: string;
+}
 
-  // Redirect if not logged in
+const ProfilePage = () => {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+  const [entries, setEntries] = useState<Entry[]>([]);
+
   useEffect(() => {
-    if (!isAuthenticated) {
-      navigate("/signin");
-    }
-  }, [isAuthenticated, navigate]);
+    api.get("/journal/")
+      .then(({ data }) => setEntries(data))
+      .catch(() => setEntries([]));
+  }, []);
 
   if (!user) return null;
 
   const getInitials = (name: string) =>
-    name
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2);
+    name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
 
   const handleLogout = () => {
     logout();
@@ -51,13 +56,33 @@ const ProfilePage = () => {
     navigate("/");
   };
 
+  // Stats derived from the entries themselves - no extra endpoint needed.
+  const sorted = [...entries].sort(
+    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+  );
+  const lastCheckIn = sorted.length
+    ? format(new Date(sorted[0].date), "MMM d, yyyy")
+    : "No entries yet";
+
+  const moodCounts = entries.reduce<Record<string, number>>((acc, e) => {
+    acc[e.mood] = (acc[e.mood] || 0) + 1;
+    return acc;
+  }, {});
+  const dominantMood =
+    Object.entries(moodCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "—";
+
+  const stats = [
+    { icon: BookOpen, label: "Journal entries", value: String(entries.length) },
+    { icon: TrendingUp, label: "Most common mood", value: dominantMood },
+    { icon: CalendarDays, label: "Last check-in", value: lastCheckIn },
+  ];
+
   return (
     <div className="container max-w-3xl mx-auto py-12 px-4">
       {/* Profile Hero Card */}
       <Card className="mb-8 overflow-hidden">
         <div className="h-28 bg-gradient-to-r from-brand-primary/20 via-brand-primary/10 to-pink-100/30" />
         <CardContent className="relative pb-6 pt-0">
-          {/* Avatar */}
           <div className="-mt-12 mb-4 flex items-end justify-between">
             <Avatar className="h-24 w-24 border-4 border-background shadow-lg">
               <AvatarFallback className="bg-brand-primary text-white text-2xl font-bold">
@@ -75,7 +100,6 @@ const ProfilePage = () => {
             </Button>
           </div>
 
-          {/* User Info */}
           <div className="space-y-2">
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-2xl font-bold">{user.name}</h1>
@@ -95,6 +119,21 @@ const ProfilePage = () => {
           </div>
         </CardContent>
       </Card>
+
+      {/* Stats */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+        {stats.map(({ icon: Icon, label, value }) => (
+          <Card key={label}>
+            <CardContent className="p-5">
+              <div className="flex items-center gap-2 text-muted-foreground mb-2">
+                <Icon className="h-4 w-4 text-brand-primary" />
+                <span className="text-xs uppercase tracking-wide">{label}</span>
+              </div>
+              <p className="text-xl font-semibold">{value}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
 
       {/* Quick Access */}
       <h2 className="text-lg font-semibold mb-4 text-foreground">Your Tools</h2>
