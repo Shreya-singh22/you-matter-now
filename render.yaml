@@ -1,14 +1,42 @@
 services:
   - type: web
     name: you-matter-now-backend
-    env: python
-    rootDirectory: .
-    buildCommand: pip install -r requirements.txt
+    runtime: python
+    plan: free
+    rootDir: .
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
     startCommand: cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
-        value: 3.10.0
+        value: "3.13.0"
+
+      # Signs the JWTs. Render generates one; rotating it logs everyone out.
       - key: SECRET_KEY
         generateValue: true
+
+      # Set this by hand in the Render dashboard - never commit it.
       - key: GROQ_API_KEY
         sync: false
+
+      # Origins allowed to call this API. Replace with your Vercel URL.
+      - key: ALLOWED_ORIGINS
+        sync: false
+
+      # Retrieval needs torch and an embedding model (~500MB of RAM).
+      # Set to "false" if the free instance runs out of memory - the chatbot
+      # keeps working, just without grounding in the source document.
+      - key: ENABLE_RAG
+        value: "true"
+
+      # Uncomment after creating a Postgres instance. Without it the app
+      # falls back to SQLite, which Render wipes on every deploy.
+      # - key: DATABASE_URL
+      #   fromDatabase:
+      #     name: you-matter-now-db
+      #     property: connectionString
+
+# Uncomment together with DATABASE_URL above to get durable storage.
+# databases:
+#   - name: you-matter-now-db
+#     plan: free
