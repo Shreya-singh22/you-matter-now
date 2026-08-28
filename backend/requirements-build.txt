@@ -1,0 +1,7 @@
+# Only needed to run build_index.py locally, never at runtime.
+#   pip install -r requirements.txt -r requirements-build.txt
+#   python build_index.py
+
+langchain-community==0.4.2
+langchain-text-splitters==1.1.2
+pypdf==6.16.2

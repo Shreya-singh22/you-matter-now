@@ -36,4 +36,3 @@ venv/
 
 # Local data / generated artifacts
 *.db
-chroma_db/

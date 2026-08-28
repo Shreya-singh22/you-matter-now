@@ -19,17 +19,16 @@ import os
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import RunnablePassthrough
+from langchain_core.runnables import RunnableLambda, RunnablePassthrough
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# The retrieval stack is optional - import it defensively.
+# Retrieval is optional - import it defensively so a lean install still
+# starts. Chroma's bundled ONNX embedder needs no torch.
 try:
-    from langchain_community.document_loaders import PyPDFLoader, DirectoryLoader
-    from langchain_chroma import Chroma
-    from langchain_text_splitters import RecursiveCharacterTextSplitter
-    from langchain_huggingface import HuggingFaceEmbeddings
+    import chromadb
+    from chromadb.utils import embedding_functions
 
     RAG_LIBS_AVAILABLE = True
 except ImportError as exc:
@@ -40,7 +39,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 CHROMA_DIR = os.path.join(BASE_DIR, "chroma_db")
 
-EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+COLLECTION = "mental_health"
 CHAT_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 
 # gpt-oss is a reasoning model: it spends tokens thinking before it writes.
@@ -53,8 +52,6 @@ REASONING_EFFORT = os.getenv("GROQ_REASONING_EFFORT", "low")
 # never cut off mid-sentence.
 MAX_TOKENS = int(os.getenv("GROQ_MAX_TOKENS", "400"))
 
-CHUNK_SIZE = 500
-CHUNK_OVERLAP = 50
 RETRIEVED_CHUNKS = 4
 
 ENABLE_RAG = (
@@ -102,14 +99,10 @@ DIRECT_PROMPT = ChatPromptTemplate.from_messages(
 )
 
 
-def _format_docs(docs) -> str:
-    return "\n\n".join(doc.page_content for doc in docs)
-
-
 class ChatBotService:
     def __init__(self):
         self.llm = self._init_llm()
-        self.vector_db = self._get_or_create_vector_db()
+        self.vector_db = self._load_vector_db()
         self.chain = self._build_chain()
 
     def _init_llm(self):
@@ -125,44 +118,50 @@ class ChatBotService:
             reasoning_effort=REASONING_EFFORT,
         )
 
-    def _get_or_create_vector_db(self):
+    def _load_vector_db(self):
+        """Open the prebuilt index. Never builds one.
+
+        Building embeds every chunk and peaks near 700MB; answering a
+        question embeds only that question and peaks near 275MB. So the
+        index is built offline by build_index.py and committed.
+        """
         if not ENABLE_RAG:
             print("Retrieval disabled - chatbot running in direct mode.")
             return None
 
-        embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
-
-        # Reuse the persisted store when it already holds documents; building
-        # it is the slow part of startup.
-        if os.path.isdir(CHROMA_DIR):
-            try:
-                db = Chroma(persist_directory=CHROMA_DIR, embedding_function=embeddings)
-                count = db._collection.count()
-                if count > 0:
-                    print(f"Loaded existing vector store ({count} chunks).")
-                    return db
-            except Exception as exc:
-                print(f"Could not load existing vector store, rebuilding: {exc}")
-
-        print("Building vector store from ./data ...")
-        try:
-            documents = DirectoryLoader(
-                DATA_DIR, glob="*.pdf", loader_cls=PyPDFLoader
-            ).load()
-            if not documents:
-                print(f"No PDFs found in {DATA_DIR}.")
-                return None
-
-            chunks = RecursiveCharacterTextSplitter(
-                chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP
-            ).split_documents(documents)
-
-            db = Chroma.from_documents(chunks, embeddings, persist_directory=CHROMA_DIR)
-            print(f"Vector store built: {len(chunks)} chunks.")
-            return db
-        except Exception as exc:
-            print(f"Error building vector store: {exc}")
+        if not os.path.isdir(CHROMA_DIR):
+            print(
+                f"No index at {CHROMA_DIR} - direct mode. "
+                "Run 'python build_index.py' and commit chroma_db/ to enable retrieval."
+            )
             return None
+
+        try:
+            client = chromadb.PersistentClient(path=CHROMA_DIR)
+            collection = client.get_collection(
+                name=COLLECTION,
+                embedding_function=embedding_functions.ONNXMiniLM_L6_V2(),
+            )
+            count = collection.count()
+            if count == 0:
+                print("Index is empty - direct mode.")
+                return None
+            print(f"Loaded prebuilt index ({count} chunks).")
+            return collection
+        except Exception as exc:
+            print(f"Could not open index ({exc}) - direct mode.")
+            return None
+
+    def _retrieve(self, question: str) -> str:
+        """Top-k chunks for a question, as one context string."""
+        try:
+            result = self.vector_db.query(
+                query_texts=[question], n_results=RETRIEVED_CHUNKS
+            )
+            return "\n\n".join(result["documents"][0])
+        except Exception as exc:
+            print(f"Retrieval failed ({exc}) - answering without context.")
+            return "No additional context available."
 
     def _build_chain(self):
         if not self.llm:
@@ -173,12 +172,10 @@ class ChatBotService:
         if not self.vector_db:
             return DIRECT_PROMPT | self.llm | StrOutputParser()
 
-        retriever = self.vector_db.as_retriever(search_kwargs={"k": RETRIEVED_CHUNKS})
-
-        # LCEL: the question fans out to the retriever (for context) and
+        # LCEL: the question fans out to retrieval (for context) and
         # straight through (for the question slot), then prompt -> model -> text.
         return (
-            {"context": retriever | _format_docs, "question": RunnablePassthrough()}
+            {"context": RunnableLambda(self._retrieve), "question": RunnablePassthrough()}
             | RAG_PROMPT
             | self.llm
             | StrOutputParser()
