@@ -28,6 +28,16 @@ CHROMA_DIR = os.path.join(BASE_DIR, "chroma_db")
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 CHAT_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 
+# gpt-oss is a reasoning model: it spends tokens thinking before it writes.
+# "low" keeps that to ~30 tokens instead of ~400, which both speeds up the
+# reply and stops reasoning from eating the whole budget.
+REASONING_EFFORT = os.getenv("GROQ_REASONING_EFFORT", "low")
+
+# A safety net, not the length control - the prompt does that. Set high
+# enough that reasoning plus a short answer always fit, so replies are
+# never cut off mid-sentence.
+MAX_TOKENS = int(os.getenv("GROQ_MAX_TOKENS", "400"))
+
 CHUNK_SIZE = 500
 CHUNK_OVERLAP = 50
 RETRIEVED_CHUNKS = 4
@@ -36,20 +46,34 @@ RETRIEVED_CHUNKS = 4
 # instances. Set ENABLE_RAG=false to run the chatbot without it.
 ENABLE_RAG = os.getenv("ENABLE_RAG", "true").lower() not in ("false", "0", "no")
 
-SYSTEM_RULES = """You are a compassionate mental health chatbot.
-Respond with warmth and empathy. Keep replies to two or three short
-paragraphs. Never diagnose. Only discuss mental health, emotional
-well-being and coping - politely redirect anything else. If the user
-expresses thoughts of self-harm, urge them to contact a crisis line or a
-mental health professional immediately."""
+STYLE_RULES = """Style rules, follow them strictly:
+- Keep the whole reply under 80 words. Two short paragraphs at most.
+- Plain conversational sentences. No markdown, no bold, no headings, no
+  bullet lists, no numbered lists.
+- Do not restate the user's feelings back to them at length. One brief
+  acknowledgement, then one concrete, practical suggestion.
+- End with a single short question."""
+
+SYSTEM_RULES = f"""You are a compassionate mental health chatbot.
+Respond with warmth and empathy. Never diagnose. Only discuss mental
+health, emotional well-being and coping - politely redirect anything
+else. If the user expresses thoughts of self-harm, urge them to contact a
+crisis line or a mental health professional immediately.
+
+{STYLE_RULES}"""
 
 # Used when the vector store is available.
 PROMPT = ChatPromptTemplate.from_template(
     """You are a compassionate mental health chatbot.
-Use the following context to answer the user's question. If the context does
-not cover it, say so honestly and offer general support rather than inventing
-specifics. Never diagnose. If the user expresses thoughts of self-harm, urge
-them to contact a crisis line or a mental health professional immediately.
+Use the context below to inform your answer. If it doesn't cover the
+question, say so briefly and offer general support rather than inventing
+specifics. Never diagnose. If the user expresses thoughts of self-harm,
+urge them to contact a crisis line or a mental health professional
+immediately.
+
+"""
+    + STYLE_RULES
+    + """
 
 Context:
 {context}
@@ -81,7 +105,13 @@ class ChatBotService:
         if not api_key:
             print("WARNING: GROQ_API_KEY is not set - chat requests will fail.")
             return None
-        return ChatGroq(temperature=0, api_key=api_key, model=CHAT_MODEL)
+        return ChatGroq(
+            temperature=0.4,
+            api_key=api_key,
+            model=CHAT_MODEL,
+            max_tokens=MAX_TOKENS,
+            reasoning_effort=REASONING_EFFORT,
+        )
 
     def _get_or_create_vector_db(self):
         if not ENABLE_RAG:
