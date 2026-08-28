@@ -110,7 +110,7 @@ Guidelines:
       const response = await axios.post(
         "https://api.groq.com/openai/v1/chat/completions",
         {
-          model: "llama-3.3-70b-versatile",
+          model: "openai/gpt-oss-120b",
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: input }
@@ -142,9 +142,19 @@ Guidelines:
       console.error("API Error:", error);
 
       let errorText = "I'm sorry, I'm having trouble connecting right now. Please try again in a moment.";
-      const err = error as { response?: { status?: number }; message?: string };
+      const err = error as {
+        response?: { status?: number; data?: { error?: { message?: string } } };
+        message?: string;
+      };
 
-      if (err.response?.status === 401 || err.response?.status === 403) {
+      if (err.response?.status === 400) {
+        // Surface the provider's own reason - most often a decommissioned model.
+        const reason = err.response.data?.error?.message;
+        errorText = reason
+          ? `⚠️ The AI service rejected the request: ${reason}`
+          : "⚠️ The AI service rejected the request. The configured model may no longer be available.";
+        setApiError("Bad request");
+      } else if (err.response?.status === 401 || err.response?.status === 403) {
         errorText = "⚠️ API authentication failed. Please check that your VITE_GROQ_API_KEY key is valid and has the necessary permissions.";
         setApiError("Authentication failed");
       } else if (err.response?.status === 429) {
