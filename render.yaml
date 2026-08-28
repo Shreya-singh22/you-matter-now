@@ -3,10 +3,21 @@ services:
     name: you-matter-now-backend
     runtime: python
     plan: free
-    rootDir: .
-    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
-    startCommand: cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT
+    rootDir: backend
     healthCheckPath: /health
+
+    # Base install only - fits in the free tier's 512MB.
+    # For retrieval-augmented answers you need a paid instance (2GB+) and
+    # this build command instead:
+    #   pip install --upgrade pip
+    #     && pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu
+    #     && pip install -r requirements.txt -r requirements-rag.txt
+    # Install torch from its own index first, or pip resolves the CUDA
+    # build and pulls ~2.5GB of nvidia wheels.
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+
     envVars:
       - key: PYTHON_VERSION
         value: "3.13.0"
@@ -15,19 +26,20 @@ services:
       - key: SECRET_KEY
         generateValue: true
 
-      # Set this by hand in the Render dashboard - never commit it.
+      # Set by hand in the Render dashboard - never commit it.
       - key: GROQ_API_KEY
         sync: false
 
-      # Origins allowed to call this API. Replace with your Vercel URL.
+      # Comma-separated origins allowed to call this API.
+      # Set to your Vercel URL, e.g. https://you-matter-now.vercel.app
       - key: ALLOWED_ORIGINS
         sync: false
 
-      # Retrieval needs torch and an embedding model (~500MB of RAM).
-      # Set to "false" if the free instance runs out of memory - the chatbot
-      # keeps working, just without grounding in the source document.
+      # Retrieval needs the requirements-rag.txt stack and ~2GB of RAM.
+      # Left off so the free tier doesn't run out of memory; the chatbot
+      # still answers, just without grounding in the source document.
       - key: ENABLE_RAG
-        value: "true"
+        value: "false"
 
       # Uncomment after creating a Postgres instance. Without it the app
       # falls back to SQLite, which Render wipes on every deploy.

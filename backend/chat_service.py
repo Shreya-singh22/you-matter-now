@@ -1,25 +1,40 @@
-"""Retrieval-augmented chat over a curated mental-health document.
+"""Mental-health chat, with optional retrieval augmentation.
 
-Ingestion (once, on first boot):
-    PDF -> chunks -> embeddings -> Chroma, persisted to disk.
+Two modes, chosen automatically:
 
-Query (per message):
-    question -> similarity search -> context + question -> prompt -> Groq.
+  Grounded  - PDF -> chunks -> embeddings -> Chroma. At query time the most
+              relevant chunks are retrieved and stuffed into the prompt.
+              Needs torch and an embedding model (~2GB RAM).
+
+  Direct    - the same system prompt, no retrieval. Runs anywhere.
+
+Retrieval turns on only when requirements-rag.txt is installed AND
+ENABLE_RAG is not "false". If those imports are missing the service falls
+back to direct mode instead of failing to start, so a small instance
+still serves a working chatbot.
 """
 
 import os
 
 from langchain_groq import ChatGroq
-from langchain_community.document_loaders import PyPDFLoader, DirectoryLoader
-from langchain_chroma import Chroma
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_huggingface import HuggingFaceEmbeddings
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# The retrieval stack is optional - import it defensively.
+try:
+    from langchain_community.document_loaders import PyPDFLoader, DirectoryLoader
+    from langchain_chroma import Chroma
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+    from langchain_huggingface import HuggingFaceEmbeddings
+
+    RAG_LIBS_AVAILABLE = True
+except ImportError as exc:
+    print(f"Retrieval libraries not installed ({exc.name}) - running in direct mode.")
+    RAG_LIBS_AVAILABLE = False
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
@@ -42,9 +57,10 @@ CHUNK_SIZE = 500
 CHUNK_OVERLAP = 50
 RETRIEVED_CHUNKS = 4
 
-# Retrieval needs torch + an embedding model, which is heavy for small
-# instances. Set ENABLE_RAG=false to run the chatbot without it.
-ENABLE_RAG = os.getenv("ENABLE_RAG", "true").lower() not in ("false", "0", "no")
+ENABLE_RAG = (
+    os.getenv("ENABLE_RAG", "true").lower() not in ("false", "0", "no")
+    and RAG_LIBS_AVAILABLE
+)
 
 STYLE_RULES = """Style rules, follow them strictly:
 - Keep the whole reply under 80 words. Two short paragraphs at most.
@@ -54,22 +70,20 @@ STYLE_RULES = """Style rules, follow them strictly:
   acknowledgement, then one concrete, practical suggestion.
 - End with a single short question."""
 
-SYSTEM_RULES = f"""You are a compassionate mental health chatbot.
+SAFETY_RULES = """You are a compassionate mental health chatbot.
 Respond with warmth and empathy. Never diagnose. Only discuss mental
 health, emotional well-being and coping - politely redirect anything
 else. If the user expresses thoughts of self-harm, urge them to contact a
-crisis line or a mental health professional immediately.
+crisis line or a mental health professional immediately."""
 
-{STYLE_RULES}"""
+# Grounded mode.
+RAG_PROMPT = ChatPromptTemplate.from_template(
+    SAFETY_RULES
+    + """
 
-# Used when the vector store is available.
-PROMPT = ChatPromptTemplate.from_template(
-    """You are a compassionate mental health chatbot.
 Use the context below to inform your answer. If it doesn't cover the
 question, say so briefly and offer general support rather than inventing
-specifics. Never diagnose. If the user expresses thoughts of self-harm,
-urge them to contact a crisis line or a mental health professional
-immediately.
+specifics.
 
 """
     + STYLE_RULES
@@ -82,11 +96,9 @@ User: {question}
 Chatbot:"""
 )
 
-
-# Used when retrieval is unavailable - the chatbot still works, just
-# without grounding in the source document.
-FALLBACK_PROMPT = ChatPromptTemplate.from_messages(
-    [("system", SYSTEM_RULES), ("human", "{question}")]
+# Direct mode.
+DIRECT_PROMPT = ChatPromptTemplate.from_messages(
+    [("system", f"{SAFETY_RULES}\n\n{STYLE_RULES}"), ("human", "{question}")]
 )
 
 
@@ -115,7 +127,7 @@ class ChatBotService:
 
     def _get_or_create_vector_db(self):
         if not ENABLE_RAG:
-            print("ENABLE_RAG is false - running without retrieval.")
+            print("Retrieval disabled - chatbot running in direct mode.")
             return None
 
         embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
@@ -125,8 +137,9 @@ class ChatBotService:
         if os.path.isdir(CHROMA_DIR):
             try:
                 db = Chroma(persist_directory=CHROMA_DIR, embedding_function=embeddings)
-                if db._collection.count() > 0:
-                    print(f"Loaded existing vector store ({db._collection.count()} chunks).")
+                count = db._collection.count()
+                if count > 0:
+                    print(f"Loaded existing vector store ({count} chunks).")
                     return db
             except Exception as exc:
                 print(f"Could not load existing vector store, rebuilding: {exc}")
@@ -158,8 +171,7 @@ class ChatBotService:
         # No vector store - answer from the system prompt alone rather than
         # failing. The chatbot stays useful; it just isn't grounded.
         if not self.vector_db:
-            print("No vector store - chatbot running without retrieval.")
-            return FALLBACK_PROMPT | self.llm | StrOutputParser()
+            return DIRECT_PROMPT | self.llm | StrOutputParser()
 
         retriever = self.vector_db.as_retriever(search_kwargs={"k": RETRIEVED_CHUNKS})
 
@@ -167,7 +179,7 @@ class ChatBotService:
         # straight through (for the question slot), then prompt -> model -> text.
         return (
             {"context": retriever | _format_docs, "question": RunnablePassthrough()}
-            | PROMPT
+            | RAG_PROMPT
             | self.llm
             | StrOutputParser()
         )
@@ -183,7 +195,6 @@ class ChatBotService:
         except Exception as exc:
             print(f"Chat error: {exc}")
             return "I ran into a problem answering that. Please try again in a moment."
-
 
     @property
     def uses_retrieval(self) -> bool:
